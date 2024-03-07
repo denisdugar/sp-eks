@@ -1,7 +1,11 @@
-addd new user https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#create-new-user
-change argocd secret
+####add new user https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#create-new-user ####
+####change argocd-cm config map and argocd-secret secret ####
+#### in secret add ####
+data:
+  accounts.<username>.password: <hash password>
 
+#### LOGIN TO THE ARGOCD CLI WITH NEW USER ####
 argocd login SERVER:80
+#### GENERATE TOCKEN FOR WEBHOOK ####
 argocd account generate-token
-
 

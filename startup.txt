@@ -1,3 +1,4 @@
+#### SETUP ENV VAR ####
 export KARPENTER_NAMESPACE="kube-system"
 export KARPENTER_VERSION="0.35.0"
 export K8S_VERSION="1.29"
@@ -7,8 +8,13 @@ export AWS_DEFAULT_REGION="us-west-2"
 export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 export TEMPOUT="$(mktemp)"
 
+
+#### CREATE NETWORK INFRA FOR CLUSTER ####
 terraform apply --auto-approve
 
+#### !!!!! PLEASE TAKE VPC AND SUBNET IDS AND PUT THEM TO CLUSTER MANIFEST FILE MANUALLY !!!! ####
+
+#### CREATE IAM ROLES FOR KARPENTER IN AWS ####
 curl -fsSL https://raw.githubusercontent.com/aws/karpenter-provider-aws/v"${KARPENTER_VERSION}"/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml  > "${TEMPOUT}" \
 && aws cloudformation deploy \
   --stack-name "Karpenter-${CLUSTER_NAME}" \
@@ -16,26 +22,34 @@ curl -fsSL https://raw.githubusercontent.com/aws/karpenter-provider-aws/v"${KARP
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides "ClusterName=${CLUSTER_NAME}"
 
-## change vpc and subnets
+#### ADD ENV VAR TO MANIFEST FILES ####
 
 envsubst < cluster.yaml > cluster_final.yaml
 envsubst < node-pool.yaml > node-pool_final.yaml
 
+
+#### CREATE CLUSTER ####
 eksctl create cluster -f cluster_final.yaml
 
+
+#### ADD ARGOCD TO CLUSTER ####
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
+
+#### INSTAL ARGOCD CLI ####
 curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
 sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
 rm argocd-linux-amd64
 
+#### CREATE LOAD BALANCER SERVICE FOR ARGOCD ####
 kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
 
+#### GET PASSWORD FOR ADMIN USER TO LOGIN TO ARGOCD UI ####
 argocd admin initial-password -n argocd
 
+#### ADD KARPENTER TO CLUSTER ####
 helm registry logout public.ecr.aws
-
 helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --version "${KARPENTER_VERSION}" --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
   --set "settings.clusterName=${CLUSTER_NAME}" \
   --set "settings.interruptionQueue=${CLUSTER_NAME}" \
@@ -45,9 +59,7 @@ helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --vers
   --set controller.resources.limits.memory=1Gi \
   --wait
 
+
+#### CHECK SELECTED SUBNET TAGS IN NODE POOL MANIFEST FILE AND CHANGE IT MANUALLY FOR YOURS ####
+#### CREATE NODE POOL ####
 kubectl apply -f node-pool_final.yaml
-
-
-
-
-kubectl apply -f simple-deploy.yaml
