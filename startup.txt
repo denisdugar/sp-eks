@@ -1,0 +1,53 @@
+export KARPENTER_NAMESPACE="kube-system"
+export KARPENTER_VERSION="0.35.0"
+export K8S_VERSION="1.29"
+export AWS_PARTITION="aws" # if you are not using standard partitions, you may need to configure to aws-cn / aws-us-gov
+export CLUSTER_NAME="${USER}-karpenter-demo"
+export AWS_DEFAULT_REGION="us-west-2"
+export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+export TEMPOUT="$(mktemp)"
+
+terraform apply --auto-approve
+
+curl -fsSL https://raw.githubusercontent.com/aws/karpenter-provider-aws/v"${KARPENTER_VERSION}"/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml  > "${TEMPOUT}" \
+&& aws cloudformation deploy \
+  --stack-name "Karpenter-${CLUSTER_NAME}" \
+  --template-file "${TEMPOUT}" \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides "ClusterName=${CLUSTER_NAME}"
+
+## change vpc and subnets
+
+envsubst < cluster.yaml > cluster_final.yaml
+envsubst < node-pool.yaml > node-pool_final.yaml
+
+eksctl create cluster -f cluster_final.yaml
+
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+rm argocd-linux-amd64
+
+kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+
+argocd admin initial-password -n argocd
+
+helm registry logout public.ecr.aws
+
+helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --version "${KARPENTER_VERSION}" --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+  --set "settings.clusterName=${CLUSTER_NAME}" \
+  --set "settings.interruptionQueue=${CLUSTER_NAME}" \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+
+kubectl apply -f node-pool_final.yaml
+
+
+
+
+kubectl apply -f simple-deploy.yaml

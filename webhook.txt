@@ -1,0 +1,7 @@
+addd new user https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#create-new-user
+change argocd secret
+
+argocd login SERVER:80
+argocd account generate-token
+
+
