@@ -63,3 +63,22 @@ helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --vers
 #### CHECK SELECTED SUBNET TAGS IN NODE POOL MANIFEST FILE AND CHANGE IT MANUALLY FOR YOURS ####
 #### CREATE NODE POOL ####
 kubectl apply -f node-pool_final.yaml
+
+#### INSTALL FLUXCD CLI ####
+curl -s https://fluxcd.io/install.sh | sudo bash
+
+#### EXPORT CREDS ####
+export GITHUB_TOKEN=<your-token>
+export GITHUB_USER=<your-username>
+
+
+#### CHECK CLUSTER ####
+flux check --pre
+
+#### INSTALL FLUX CD ####
+flux bootstrap github \
+  --owner=$GITHUB_USER \
+  --repository=sp-eks \
+  --branch=main \
+  --path=./clusters/my-cluster \
+  --personal
